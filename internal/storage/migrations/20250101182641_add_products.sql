@@ -2,7 +2,7 @@
 -- +goose StatementBegin
 create table if not exists prices
 (
-    id               int,
+    id               int, -- id уже является первичным ключом благодаря constraint pk_products
     name             text,
     category         text,
     price            numeric(10,2),

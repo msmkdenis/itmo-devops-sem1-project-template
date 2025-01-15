@@ -5,16 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 )
 
 func (s *Server) Run() {
 	httpServerCtx, httpServerStopCtx := context.WithCancel(context.Background())
+	defer httpServerStopCtx()
 
 	go func() {
 		if err := s.app.Listen(s.serverAddr); err != nil {
 			slog.Error(err.Error())
-			os.Exit(1)
+			httpServerStopCtx()
 		}
 	}()
 
@@ -31,13 +31,13 @@ func (s *Server) Run() {
 
 			if errors.Is(shutdownCtx.Err(), context.DeadlineExceeded) {
 				slog.Error(fmt.Sprintf("%s graceful shutdown timed out.. forcing exit.", s.serverAddr))
-				os.Exit(1)
+				httpServerStopCtx()
 			}
 		}()
 
 		if errShutdown := s.app.Shutdown(); errShutdown != nil {
 			slog.Error(errShutdown.Error())
-			os.Exit(1)
+			httpServerStopCtx()
 		}
 
 		slog.Info(fmt.Sprintf("%s gracefully stopped.", s.serverAddr))

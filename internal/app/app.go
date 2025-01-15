@@ -29,19 +29,25 @@ func Run(quitSignal <-chan os.Signal) {
 	postgresStorage, err := storage.NewPostgresPool(ctx, cfg)
 	if err != nil {
 		slog.Error(fmt.Sprintf("failed to create storage %s", err.Error()))
-		os.Exit(1)
+
+		return
 	}
+
+	// закрываем pgxpool через defer
+	defer postgresStorage.DB.Close()
 
 	migrate, err := storage.NewMigrations(postgresStorage.DB)
 	if err != nil {
 		slog.Error(fmt.Sprintf("failed to initialize migrations %s", err.Error()))
-		os.Exit(1)
+
+		return
 	}
 
 	err = migrate.Up()
 	if err != nil {
 		slog.Error(fmt.Sprintf("failed to apply migrations %s", err.Error()))
-		os.Exit(1)
+
+		return
 	}
 
 	decimal.MarshalJSONWithoutQuotes = true

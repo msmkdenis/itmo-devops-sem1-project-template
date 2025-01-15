@@ -24,27 +24,31 @@ func NewMarketingRepository(postgresPool *storage.PostgresPool) *MarketingReposi
 	return &MarketingRepository{postgresPool: postgresPool}
 }
 
-func (r *MarketingRepository) UploadProducts(ctx context.Context, products []model.Product) error {
+func (r *MarketingRepository) UploadProducts(ctx context.Context, products []model.Product) (*model.LoadResult, error) {
 	tx, err := r.postgresPool.DB.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("unable to acquire connection for transaction %w", err)
+		return nil, fmt.Errorf("unable to acquire connection for transaction %w", err)
 	}
 
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.Info(fmt.Sprintf("failed to rollback transaction: %s", err.Error()))
+			slog.Error("failed to rollback transaction", "error", err)
 		}
 	}()
 
-	insertProductQuery := `insert into "prices" (id, name, category, price, create_date) values ($1, $2, $3, $4, $5)`
+	insertProductQuery := `
+							insert into "prices" (id, name, category, price, create_date) 
+							values ($1, $2, $3, $4, $5) 
+							on conflict (id) do nothing`
 
 	productStatement, err := tx.Prepare(ctx, "insertproduct", insertProductQuery)
 	if err != nil {
-		return fmt.Errorf("unable to prepare query %w", err)
+		return nil, fmt.Errorf("unable to prepare query %w", err)
 	}
 
 	batch := &pgx.Batch{}
 
+	// технически for range имеет небольшие накладные расходы на копирование элемента, поэтому так сделал
 	for i := 0; i < len(products); i++ {
 		batch.Queue(productStatement.Name, products[i].ID, products[i].Name, products[i].Category, products[i].Price, products[i].CreateDate)
 	}
@@ -52,15 +56,33 @@ func (r *MarketingRepository) UploadProducts(ctx context.Context, products []mod
 	result := tx.SendBatch(ctx, batch)
 
 	if err := result.Close(); err != nil {
-		return fmt.Errorf("error executing batch: %w", err)
+		return nil, fmt.Errorf("error executing batch: %w", err)
 	}
 
-	err = tx.Commit(ctx)
+	query := `
+		select
+			count(id) as total_items,
+			count(distinct category) as total_categories,
+			coalesce(sum(price), 0) as total_price
+		from prices`
+
+	rows, err := tx.Query(ctx, query)
 	if err != nil {
-		return fmt.Errorf("unable to commit %w", err)
+		return nil, fmt.Errorf("get products stats: %w", err)
 	}
 
-	return nil
+	defer rows.Close()
+
+	stats, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[model.LoadResult])
+	if err != nil {
+		return nil, fmt.Errorf("collect product rows: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("unable to commit: %w", err)
+	}
+
+	return &stats, nil
 }
 
 func (r *MarketingRepository) LoadProducts(ctx context.Context) ([]model.Product, error) {

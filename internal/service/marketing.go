@@ -20,10 +20,13 @@ import (
 
 var ErrCSVData = errors.New("failed to parse csv data")
 
-const CSVColumnsNumber = 5
+const (
+	CSVColumnsNumber  = 5
+	productDateLayout = "2006-01-02"
+)
 
 type MarketingRepository interface {
-	UploadProducts(ctx context.Context, products []model.Product) error
+	UploadProducts(ctx context.Context, products []model.Product) (*model.LoadResult, error)
 	LoadProducts(ctx context.Context) ([]model.Product, error)
 }
 
@@ -68,12 +71,12 @@ func (s *MarketingService) SaveProducts(ctx context.Context, file *multipart.Fil
 		products = append(products, productsFile...)
 	}
 
-	err = s.repository.UploadProducts(ctx, products)
+	stats, err := s.repository.UploadProducts(ctx, products)
 	if err != nil {
 		return nil, fmt.Errorf("save products in db %w", err)
 	}
 
-	return formLoadResult(products), nil
+	return stats, nil
 }
 
 func (s *MarketingService) LoadProducts(ctx context.Context) ([]byte, error) {
@@ -190,7 +193,7 @@ func parseCSVProduct(record []string) (model.Product, error) {
 		return model.Product{}, fmt.Errorf("invalid price: %w", ErrCSVData)
 	}
 
-	date, err := time.Parse("2006-01-02", record[4])
+	date, err := time.Parse(productDateLayout, record[4])
 	if err != nil {
 		return model.Product{}, fmt.Errorf("invalid create_date: %w", ErrCSVData)
 	}
@@ -202,19 +205,4 @@ func parseCSVProduct(record []string) (model.Product, error) {
 		Price:      price,
 		CreateDate: date,
 	}, nil
-}
-
-func formLoadResult(products []model.Product) *model.LoadResult {
-	res := model.LoadResult{}
-	cat := make(map[string]struct{})
-
-	for i := 0; i < len(products); i++ {
-		res.TotalQuantity++
-		cat[products[i].Category] = struct{}{}
-		res.TotalPrice = res.TotalPrice.Add(products[i].Price)
-	}
-
-	res.TotalCategories = len(cat)
-
-	return &res
 }

@@ -7,9 +7,9 @@ import (
 )
 
 type LoadResult struct {
-	TotalQuantity   int             `json:"total_items"` //nolint:tagliatelle //неправильно обрабатывает
-	TotalCategories int             `json:"total_categories"`
-	TotalPrice      decimal.Decimal `json:"total_price"`
+	TotalQuantity   int             `db:"total_items" json:"total_items"` //nolint:tagliatelle //неправильно обрабатывает
+	TotalCategories int             `db:"total_categories" json:"total_categories"`
+	TotalPrice      decimal.Decimal `db:"total_price" json:"total_price"`
 }
 
 type Product struct {
